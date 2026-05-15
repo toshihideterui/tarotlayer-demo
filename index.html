@@ -682,34 +682,21 @@ function loadData() {
 }
 
 
-// 共通AI呼び出し（Gemma優先・Groqフォールバック）
+// AI呼び出し（Groq proxy経由）
 async function callAI(prompt) {
-  if(gemmaKey) {
+  const MODELS = ['llama-3.3-70b-versatile','llama3-70b-8192','gemma2-9b-it'];
+  for(const model of MODELS) {
     try {
-      const res = await fetch(PROXY_URL,
-        {method:'POST', headers:{'Content-Type':'application/json'},
-         body:JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{maxOutputTokens:1400,temperature:0.9}})}
-      );
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if(res.ok && text) return text;
-    } catch(e) {}
-  }
-  if(groqKey) {
-    const MODELS = ['llama-3.3-70b-versatile','llama3-70b-8192','gemma2-9b-it'];
-    for(const model of MODELS) {
-      try {
-        const res = await fetch(PROXY_URL, {
+      const res = await fetch(PROXY_URL, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({model, max_tokens:1400, temperature:0.9, messages:[{role:'user',content:prompt}]})
-        });
-        const data = await res.json();
-        if(res.ok && data.choices?.[0]?.message?.content) return data.choices[0].message.content;
-      } catch(e) { continue; }
-    }
+        body:JSON.stringify({model, max_tokens:1400, temperature:0.9, messages:[{role:'user',content:prompt}]})
+      });
+      const data = await res.json();
+      if(res.ok && data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+    } catch(e) { continue; }
   }
-  throw new Error('APIキーを入力してください');
+  throw new Error('AI接続エラーが発生しました');
 }
 
 function showError(msg) { const el=document.getElementById('errorMsg'); el.textContent=msg; el.className='error-msg show'; }
