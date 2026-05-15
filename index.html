@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tarot Layer</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Noto+Serif+JP:wght@200;300;400&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0a0800">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js');
+    });
+  }
+</script>
+<style>
+  :root {
+    --void: #0a1a3a; --deep: #0d2a5a; --ink: #0a3a6a;
+    --gold: #c9a84c; --gold-dim: #7a6230; --gold-bright: #f0d080;
+    --amber: #d4820a; --crimson: #8b1a1a;
+    --text: #e8dcc0; --text-dim: #7a7060;
+    --card-bg: #0a1030; --card-border: #c9a84c;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    background:var(--void); color:var(--text);
+    font-family:'Noto Serif JP',serif; font-weight:200;
+    min-height:100vh; overflow-x:hidden; cursor:crosshair;
+  }
+
+  #skyCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; width:100%; height:100%; }
+
+  .lang-bar {
+    position:fixed; top:0; right:0; left:0; z-index:100;
+    display:flex; justify-content:center; align-items:center;
+    padding:8px 16px; gap:2px; flex-wrap:nowrap; overflow-x:auto;
+    background:linear-gradient(to bottom,rgba(10,8,0,0.95) 0%,transparent 100%);
+    scrollbar-width:none;
+  }
+  .lang-bar::-webkit-scrollbar { display:none; }
+  .lang-btn {
+    display:flex; align-items:center; gap:5px;
+    padding:10px 12px; background:transparent;
+    border:1px solid transparent; border-radius:2px;
+    color:var(--text-dim); font-family:inherit; font-size:0.68rem;
+    letter-spacing:0.04em; cursor:pointer; transition:all 0.25s; white-space:nowrap;
+    -webkit-tap-highlight-color:rgba(201,168,76,0.2);
+    touch-action:manipulation; min-height:44px;
+  }
+  .lang-btn:hover { color:var(--text); border-color:rgba(201,168,76,0.2); }
+  .lang-btn.active { color:var(--gold); border-color:rgba(201,168,76,0.35); background:rgba(201,168,76,0.06); }
+
+  .wrap { position:relative; z-index:1; max-width:760px; margin:0 auto; padding:0 24px; }
+
+  header { text-align:center; padding:100px 0 50px; }
+  .eye-sigil { width:90px; height:90px; margin:0 auto 28px; position:relative; }
+  .eye-sigil svg { width:100%; height:100%; animation:eye-glow 4s ease-in-out infinite; }
+  .eye-sigil::after {
+    content:''; position:absolute; inset:-14px; border-radius:50%;
+    background:radial-gradient(circle,rgba(201,168,76,0.15) 0%,transparent 70%);
+    animation:pulse-glow 4s ease-in-out infinite;
+  }
+  @keyframes eye-glow { 0%,100%{filter:drop-shadow(0 0 6px rgba(201,168,76,0.4))} 50%{filter:drop-shadow(0 0 16px rgba(201,168,76,0.8))} }
+  @keyframes pulse-glow { 0%,100%{opacity:0.3;transform:scale(1)} 50%{opacity:0.8;transform:scale(1.1)} }
+
+  h1 {
+    font-family:'Cormorant Garamond',serif; font-weight:300;
+    font-size:clamp(2rem,5vw,3rem); letter-spacing:0.25em;
+    color:var(--gold-bright); margin-bottom:8px;
+    text-shadow:0 0 40px rgba(201,168,76,0.5);
+  }
+  .subtitle { font-size:0.72rem; letter-spacing:0.35em; color:var(--text-dim); margin-bottom:40px; }
+
+  .oracle-form {
+    position:relative; border:1px solid rgba(201,168,76,0.15);
+    padding:40px 32px; margin-bottom:32px; background:rgba(8,30,64,0.7);
+    backdrop-filter:blur(10px);
+  }
+  .corner { position:absolute; width:16px; height:16px; border-color:var(--gold-dim); border-style:solid; }
+  .corner.tl { top:-1px; left:-1px; border-width:1px 0 0 1px; }
+  .corner.tr { top:-1px; right:-1px; border-width:1px 1px 0 0; }
+  .corner.bl { bottom:-1px; left:-1px; border-width:0 0 1px 1px; }
+  .corner.br { bottom:-1px; right:-1px; border-width:0 1px 1px 0; }
+
+  .field { margin-bottom:20px; }
+  .field label { display:block; font-size:0.65rem; letter-spacing:0.15em; color:var(--text-dim); margin-bottom:6px; }
+  .field input, .field select, .field textarea {
+    width:100%; background:rgba(255,255,255,0.03);
+    border:1px solid rgba(201,168,76,0.15); border-radius:1px;
+    color:var(--text); padding:10px 14px; outline:none;
+    font-family:inherit; font-size:0.82rem; transition:border-color .3s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color:rgba(201,168,76,0.4); }
+  .field select option { background:#1a1500; }
+
+  /* スプレッド選択 */
+  .spread-selector { display:flex; gap:12px; margin-bottom:24px; }
+  .spread-btn {
+    flex:1; padding:14px 8px; background:transparent;
+    border:1px solid rgba(201,168,76,0.2); color:var(--text-dim);
+    font-family:inherit; font-size:0.75rem; letter-spacing:0.1em;
+    cursor:pointer; transition:all .3s; text-align:center; touch-action:manipulation;
+  }
+  .spread-btn.active { border-color:var(--gold); color:var(--gold); background:rgba(201,168,76,0.06); }
+  .spread-btn:hover { border-color:var(--gold-dim); color:var(--text); }
+
+  /* カードシャッフルエリア */
+  .shuffle-area {
+    text-align:center; padding:32px; margin-bottom:24px;
+    border:1px solid rgba(201,168,76,0.1); background:rgba(8,13,40,0.4);
+  }
+  .shuffle-deck {
+    width:80px; height:120px; margin:0 auto 20px; position:relative; cursor:pointer;
+  }
+  .shuffle-deck .card-back {
+    position:absolute; width:80px; height:120px;
+    border:1px solid var(--gold-dim); background:var(--card-bg);
+    border-radius:4px; transition:all .3s;
+  }
+  .shuffle-deck .card-back:nth-child(1) { transform:rotate(-3deg); }
+  .shuffle-deck .card-back:nth-child(2) { transform:rotate(1deg); }
+  .shuffle-deck .card-back:nth-child(3) { transform:rotate(0deg); }
+  .shuffle-deck .card-back svg { width:100%; height:100%; }
+
+  /* シャッフルアニメーション */
+  @keyframes shuffleCard1 {
+    0%   { transform:rotate(-3deg) translate(0,0); }
+    15%  { transform:rotate(-25deg) translate(-60px,-30px); }
+    30%  { transform:rotate(15deg) translate(50px,-50px); }
+    50%  { transform:rotate(-10deg) translate(-30px,20px); }
+    70%  { transform:rotate(20deg) translate(40px,-20px); }
+    85%  { transform:rotate(-5deg) translate(-10px,10px); }
+    100% { transform:rotate(-3deg) translate(0,0); }
+  }
+  @keyframes shuffleCard2 {
+    0%   { transform:rotate(1deg) translate(0,0); }
+    20%  { transform:rotate(20deg) translate(55px,-40px); }
+    40%  { transform:rotate(-15deg) translate(-45px,-20px); }
+    60%  { transform:rotate(10deg) translate(30px,30px); }
+    80%  { transform:rotate(-8deg) translate(-20px,-10px); }
+    100% { transform:rotate(1deg) translate(0,0); }
+  }
+  @keyframes shuffleCard3 {
+    0%   { transform:rotate(0deg) translate(0,0); }
+    25%  { transform:rotate(-20deg) translate(-50px,20px); }
+    45%  { transform:rotate(25deg) translate(60px,-30px); }
+    65%  { transform:rotate(-12deg) translate(-25px,40px); }
+    85%  { transform:rotate(5deg) translate(15px,-15px); }
+    100% { transform:rotate(0deg) translate(0,0); }
+  }
+  .shuffling .card-back:nth-child(1) { animation:shuffleCard1 0.8s ease-in-out; }
+  .shuffling .card-back:nth-child(2) { animation:shuffleCard2 0.8s ease-in-out; }
+  .shuffling .card-back:nth-child(3) { animation:shuffleCard3 0.8s ease-in-out; }
+  .shuffle-btn {
+    padding:12px 32px; background:transparent;
+    border:1px solid rgba(201,168,76,0.4); color:var(--gold);
+    font-family:inherit; font-size:0.8rem; letter-spacing:0.2em;
+    cursor:pointer; transition:all .3s; touch-action:manipulation;
+  }
+  .shuffle-btn:hover { background:rgba(201,168,76,0.08); }
+  .shuffle-status { font-size:0.68rem; color:var(--text-dim); margin-top:12px; letter-spacing:0.1em; }
+
+  /* 選択済みカード表示 */
+  .selected-cards { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:24px; }
+  .card-slot {
+    text-align:center; flex:1; min-width:80px; max-width:120px;
+  }
+  .card-slot-label { font-size:0.58rem; letter-spacing:0.12em; color:var(--text-dim); margin-bottom:8px; }
+  .card-visual {
+    width:80px; height:120px; margin:0 auto;
+    border:1px solid var(--gold-dim); background:var(--card-bg);
+    border-radius:4px; display:flex; align-items:center; justify-content:center;
+    position:relative; overflow:hidden;
+  }
+  .card-visual.reversed { transform:rotate(180deg); }
+  .card-visual svg { width:90%; height:90%; }
+  .card-name { font-size:0.62rem; color:var(--gold); margin-top:6px; letter-spacing:0.05em; line-height:1.4; }
+  .card-reversed-label { font-size:0.55rem; color:var(--amber); margin-top:2px; }
+
+  .invoke-btn {
+    width:100%; padding:16px; background:transparent;
+    border:1px solid rgba(201,168,76,0.4); color:var(--gold-bright);
+    font-family:inherit; font-size:0.8rem; letter-spacing:0.25em;
+    cursor:pointer; transition:all .4s; touch-action:manipulation;
+  }
+  .invoke-btn:hover { background:rgba(201,168,76,0.08); border-color:rgba(201,168,76,0.7); box-shadow:0 0 30px rgba(201,168,76,0.15); }
+  .invoke-btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  .error-msg { display:none; margin-top:16px; padding:12px 16px; border:1px solid rgba(201,168,76,0.3); color:#c0a060; font-size:0.75rem; letter-spacing:0.05em; line-height:1.8; }
+  .error-msg.show { display:block; }
+
+  .loading-veil { display:none; text-align:center; padding:60px 0; }
+  .loading-veil.show { display:block; }
+  .orb {
+    width:60px; height:60px; margin:0 auto 24px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%,rgba(201,168,76,0.8),rgba(139,26,42,0.4));
+    box-shadow:0 0 40px rgba(201,168,76,0.3); animation:orb-spin 2s ease-in-out infinite;
+  }
+  @keyframes orb-spin { 0%,100%{transform:scale(1);box-shadow:0 0 40px rgba(201,168,76,0.3)} 50%{transform:scale(1.2);box-shadow:0 0 60px rgba(201,168,76,0.5)} }
+  .loading-text { font-size:0.7rem; letter-spacing:0.4em; color:var(--text-dim); animation:fade-text 1.5s ease-in-out infinite; }
+  @keyframes fade-text { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  .result-scroll { display:none; margin-bottom:32px; border:1px solid rgba(201,168,76,0.2); padding:40px 32px; background:rgba(8,30,64,0.8); backdrop-filter:blur(10px); animation:fadeIn 0.8s ease; }
+  .result-scroll.show { display:block; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+
+  .result-cards { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-bottom:28px; }
+  .result-card { text-align:center; flex:1; min-width:80px; max-width:120px; }
+  .result-card-visual {
+    width:80px; height:120px; margin:0 auto 8px;
+    border:1px solid var(--gold); background:var(--card-bg);
+    border-radius:4px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 20px rgba(201,168,76,0.2); position:relative; overflow:hidden;
+  }
+  .result-card-visual.reversed { transform:rotate(180deg); }
+  .result-card-visual svg { width:90%; height:90%; }
+  .result-card-name { font-size:0.65rem; color:var(--gold-bright); letter-spacing:0.05em; line-height:1.4; }
+  .result-card-pos { font-size:0.58rem; color:var(--text-dim); margin-top:2px; }
+  .result-card-rev { font-size:0.55rem; color:var(--amber); }
+
+  .divider { text-align:center; margin:24px 0; font-size:0.7rem; letter-spacing:0.3em; color:var(--gold-dim); }
+  .fortune-text { font-size:0.88rem; line-height:2.2; letter-spacing:0.06em; color:var(--text); white-space:pre-wrap; }
+
+  .reset-btn {
+    display:block; margin:28px auto 0; padding:12px 40px;
+    background:transparent; border:1px solid rgba(201,168,76,0.25);
+    color:var(--text-dim); font-family:inherit; font-size:0.72rem;
+    letter-spacing:0.2em; cursor:pointer; transition:all .3s; touch-action:manipulation;
+  }
+  .reset-btn:hover { border-color:rgba(201,168,76,0.5); color:var(--text); }
+
+  .apikey-wrap { margin-bottom:24px; }
+  footer { text-align:center; padding:40px 0 60px; font-size:0.6rem; letter-spacing:0.2em; color:var(--text-dim); }
+</style>
+</head>
+<body>
+<canvas id="skyCanvas"></canvas>
+
+
+<div class="lang-bar">
+  <button class="lang-btn active" onclick="setLang('ja')" data-lang="ja">🇯🇵 日本語</button>
+  <button class="lang-btn" onclick="setLang('en')" data-lang="en">🇺🇸 English</button>
+  <button class="lang-btn" onclick="setLang('zh')" data-lang="zh">🇨🇳 中文</button>
+  <button class="lang-btn" onclick="setLang('ko')" data-lang="ko">🇰🇷 한국어</button>
+  <button class="lang-btn" onclick="setLang('fr')" data-lang="fr">🇫🇷 Français</button>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="eye-sigil">
+      <svg viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="45" cy="45" r="42" stroke="#c9a84c" stroke-width="0.5" opacity="0.6"/>
+        <circle cx="45" cy="45" r="30" stroke="#c9a84c" stroke-width="0.3" opacity="0.4"/>
+        <!-- 全知の目 -->
+        <ellipse cx="45" cy="45" rx="22" ry="12" fill="none" stroke="#c9a84c" stroke-width="0.8"/>
+        <circle cx="45" cy="45" r="7" fill="rgba(201,168,76,0.2)" stroke="#c9a84c" stroke-width="0.8"/>
+        <circle cx="45" cy="45" r="3" fill="rgba(201,168,76,0.6)"/>
+        <!-- 光線 -->
+        <line x1="45" y1="3" x2="45" y2="12" stroke="#c9a84c" stroke-width="0.5" opacity="0.5"/>
+        <line x1="45" y1="78" x2="45" y2="87" stroke="#c9a84c" stroke-width="0.5" opacity="0.5"/>
+        <line x1="3" y1="45" x2="12" y2="45" stroke="#c9a84c" stroke-width="0.5" opacity="0.5"/>
+        <line x1="78" y1="45" x2="87" y2="45" stroke="#c9a84c" stroke-width="0.5" opacity="0.5"/>
+        <line x1="15" y1="15" x2="22" y2="22" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+        <line x1="75" y1="15" x2="68" y2="22" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+        <line x1="15" y1="75" x2="22" y2="68" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+        <line x1="75" y1="75" x2="68" y2="68" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+      </svg>
+    </div>
+    <h1 id="appTitle">Tarot Layer</h1>
+    <p class="subtitle" id="appSubtitle">神秘のタロット占術</p>
+  </header>
+
+  <div class="oracle-form" id="formSection">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+
+    <!-- 生年月日 -->
+    <div class="field">
+      <label id="lBirth">生年月日（任意）</label>
+      <input type="date" id="birthdate">
+    </div>
+
+    <!-- 質問 -->
+    <div class="field">
+      <label id="lQuestion">質問・悩み（任意）</label>
+      <textarea id="question" rows="3" style="resize:vertical"></textarea>
+    </div>
+
+    <!-- スプレッド選択 -->
+    <div class="field">
+      <label id="lSpread">スプレッド</label>
+      <div class="spread-selector">
+        <button class="spread-btn active" onclick="selectSpread(1)" id="spread1">
+          🃏<br><span id="spread1Label">1枚引き</span>
+        </button>
+        <button class="spread-btn" onclick="selectSpread(3)" id="spread3">
+          🃏🃏🃏<br><span id="spread3Label">3枚引き</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- シャッフル＆カード選択 -->
+    <div class="shuffle-area">
+      <div class="shuffle-deck" onclick="shuffleDeck()" id="shuffleDeck">
+        <div class="card-back">
+          <svg viewBox="0 0 80 120" xmlns="http://www.w3.org/2000/svg">
+            <rect width="80" height="120" fill="#1a1200" rx="3"/>
+            <rect x="4" y="4" width="72" height="112" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.5" rx="2"/>
+            <circle cx="40" cy="60" r="25" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+            <polygon points="40,38 46,54 63,54 50,64 55,80 40,70 25,80 30,64 17,54 34,54" fill="none" stroke="#c9a84c" stroke-width="0.6" opacity="0.6"/>
+          </svg>
+        </div>
+        <div class="card-back">
+          <svg viewBox="0 0 80 120" xmlns="http://www.w3.org/2000/svg">
+            <rect width="80" height="120" fill="#1a1200" rx="3"/>
+            <rect x="4" y="4" width="72" height="112" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.5" rx="2"/>
+            <circle cx="40" cy="60" r="25" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+            <polygon points="40,38 46,54 63,54 50,64 55,80 40,70 25,80 30,64 17,54 34,54" fill="none" stroke="#c9a84c" stroke-width="0.6" opacity="0.6"/>
+          </svg>
+        </div>
+        <div class="card-back">
+          <svg viewBox="0 0 80 120" xmlns="http://www.w3.org/2000/svg">
+            <rect width="80" height="120" fill="#1a1200" rx="3"/>
+            <rect x="4" y="4" width="72" height="112" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.5" rx="2"/>
+            <circle cx="40" cy="60" r="25" fill="none" stroke="#c9a84c" stroke-width="0.5" opacity="0.4"/>
+            <polygon points="40,38 46,54 63,54 50,64 55,80 40,70 25,80 30,64 17,54 34,54" fill="none" stroke="#c9a84c" stroke-width="0.6" opacity="0.6"/>
+          </svg>
+        </div>
+      </div>
+      <button class="shuffle-btn" onclick="shuffleDeck()" id="shuffleBtn"></button>
+      <p class="shuffle-status" id="shuffleStatus"></p>
+    </div>
+
+    <!-- 選択済みカード -->
+    <div class="selected-cards" id="selectedCards" style="display:none"></div>
+
+    <button class="invoke-btn" id="invokeBtn" disabled></button>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <div class="loading-veil" id="loadingVeil">
+    <div class="orb"></div>
+    <p class="loading-text" id="loadingText"></p>
+  </div>
+
+  <div class="result-scroll" id="resultScroll">
+    <div class="result-cards" id="resultCards"></div>
+    <div class="divider"><span>✦</span></div>
+    <div class="fortune-text" id="fortuneText"></div>
+    <button class="reset-btn" id="resetBtn" onclick="resetForm()"></button>
+  </div>
+
+  <footer><p id="footerText"></p></footer>
+</div>
+
+<script>
+// ★ プロキシWorkerのURL
+const PROXY_URL = 'https://fate-layer-proxy.toshihide3.workers.dev';
+
+// ══════════════════════════════════════════
+// タロットカードデータ（大アルカナ22枚）
+// ══════════════════════════════════════════
+const TAROT_CARDS = [
+  { id:0,  en:'The Fool',          ja:'愚者',        symbol:'☀', color:'#e8d080' },
+  { id:1,  en:'The Magician',      ja:'魔術師',      symbol:'∞', color:'#e08040' },
+  { id:2,  en:'High Priestess',    ja:'女教皇',      symbol:'☽', color:'#8090d0' },
+  { id:3,  en:'The Empress',       ja:'女帝',        symbol:'♀', color:'#c080a0' },
+  { id:4,  en:'The Emperor',       ja:'皇帝',        symbol:'♂', color:'#d04040' },
+  { id:5,  en:'Hierophant',        ja:'法王',        symbol:'✝', color:'#d0a040' },
+  { id:6,  en:'The Lovers',        ja:'恋人',        symbol:'♥', color:'#e06080' },
+  { id:7,  en:'The Chariot',       ja:'戦車',        symbol:'⚔', color:'#8080d0' },
+  { id:8,  en:'Strength',          ja:'力',          symbol:'∞', color:'#e0a030' },
+  { id:9,  en:'The Hermit',        ja:'隠者',        symbol:'🔆', color:'#a0a060' },
+  { id:10, en:'Wheel of Fortune',  ja:'運命の輪',    symbol:'⊕', color:'#c0a84c' },
+  { id:11, en:'Justice',           ja:'正義',        symbol:'⚖', color:'#c0c060' },
+  { id:12, en:'Hanged Man',        ja:'吊るされた男', symbol:'⊥', color:'#6090c0' },
+  { id:13, en:'Death',             ja:'死神',        symbol:'☠', color:'#606060' },
+  { id:14, en:'Temperance',        ja:'節制',        symbol:'△', color:'#80c0a0' },
+  { id:15, en:'The Devil',         ja:'悪魔',        symbol:'♦', color:'#a04040' },
+  { id:16, en:'The Tower',         ja:'塔',          symbol:'⚡', color:'#c06030' },
+  { id:17, en:'The Star',          ja:'星',          symbol:'★', color:'#80b0e0' },
+  { id:18, en:'The Moon',          ja:'月',          symbol:'☽', color:'#9080c0' },
+  { id:19, en:'The Sun',           ja:'太陽',        symbol:'☀', color:'#e0c030' },
+  { id:20, en:'Judgement',         ja:'審判',        symbol:'🎺', color:'#c08040' },
+  { id:21, en:'The World',         ja:'世界',        symbol:'◎', color:'#80c080' },
+];
+
+function makeCardSVG(card, reversed=false) {
+  const files = {
+  0: "cards/00-TheFool.png",
+  1: "cards/01-TheMagician.png",
+  2: "cards/02-TheHighPriestess.png",
+  3: "cards/03-TheEmpress.png",
+  4: "cards/04-TheEmperor.png",
+  5: "cards/05-TheHierophant.png",
+  6: "cards/06-TheLovers.png",
+  7: "cards/07-TheChariot.png",
+  8: "cards/08-Strength.png",
+  9: "cards/09-TheHermit.png",
+  10: "cards/10-WheelOfFortune.png",
+  11: "cards/11-Justice.png",
+  12: "cards/12-TheHangedMan.png",
+  13: "cards/13-Death.png",
+  14: "cards/14-Temperance.png",
+  15: "cards/15-TheDevil.png",
+  16: "cards/16-TheTower.png",
+  17: "cards/17-TheStar.png",
+  18: "cards/18-TheMoon.png",
+  19: "cards/19-TheSun.png",
+  20: "cards/20-Judgement.png",
+  21: "cards/21-TheWorld.png"
+  };
+  const src = files[card.id];
+  if(!src) return `<svg viewBox="0 0 85 120" xmlns="http://www.w3.org/2000/svg">
+    <rect width="85" height="120" fill="#0a1030" rx="3"/>
+    <text x="42" y="66" text-anchor="middle" font-size="28" fill="${card.color}">${card.symbol}</text>
+    <text x="42" y="85" text-anchor="middle" font-size="8" fill="${card.color}">${card.ja}</text>
+  </svg>`;
+  return `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:3px;" alt="${card.ja}" loading="lazy">
+    ${reversed?'':''}`;
+}
+
+// ══════════════════════════════════════════
+// i18n
+// ══════════════════════════════════════════
+const I18N = {
+  ja: {
+    lang:'ja', appTitle:'Tarot Layer', appSubtitle:'神秘のタロット占術',
+    lApiKey:'⚡ Groq APIキー', lBirth:'生年月日（任意）',
+    lQuestion:'質問・悩み（任意）', lSpread:'スプレッド',
+    spread1Label:'1枚引き', spread3Label:'3枚引き\n過去・現在・未来',
+    shuffleBtn:'カードをシャッフル',
+    shuffleStatus0:'カードをシャッフルして引いてください',
+    shuffleStatusDone:'カードが引かれました。占いを開始できます。',
+    invokeBtn:'タロットを読み解く',
+    loadingText:'カードの神秘を読み解いています…',
+    resetBtn:'もう一度占う',
+    footerText:'Tarot Layer — 神秘のタロット占術',
+    toggleShow:'表示', toggleHide:'隠す',
+    pos1:'現在', pos2_1:'過去', pos2_2:'現在', pos2_3:'未来',
+    reversedLabel:'逆位置',
+    errApiKey:'Groq APIキーを入力してください',
+    errCard:'カードをシャッフルして引いてください',
+    errAPI:'APIエラーが発生しました',
+    system:`あなたはタロット占いの大家です。引いたカード・逆位置・生年月日・質問をもとに、詳細で具体的なタロット鑑定を日本語で行ってください。
+以下を含む鑑定文を600〜900文字で生成してください：
+- 各カードの象徴と意味（正位置・逆位置の違い）
+- カードの組み合わせが示すメッセージ
+- 質問や現状へのアドバイス
+- 今後の展望と行動指針`,
+    buildPrompt:(cards, bd, q) => {
+      const cardDesc = cards.map(c=>`${c.pos}：${c.card.ja}（${c.card.en}）${c.reversed?'【逆位置】':''}`).join('\n');
+      return `引いたカード：\n${cardDesc}\n${bd?`生年月日：${bd}\n`:''}${q?`質問：${q}\n`:''}今日：${new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'})}`;
+    }
+  },
+  en: {
+    lang:'en', appTitle:'Tarot Layer', appSubtitle:'Mystical Tarot Oracle',
+    lApiKey:'⚡ Groq API Key', lBirth:'Date of Birth (optional)',
+    lQuestion:'Your question (optional)', lSpread:'Spread',
+    spread1Label:'1 Card', spread3Label:'3 Cards\nPast · Present · Future',
+    shuffleBtn:'Shuffle the Deck',
+    shuffleStatus0:'Shuffle and draw your cards',
+    shuffleStatusDone:'Cards drawn. Ready to read.',
+    invokeBtn:'Read the Tarot',
+    loadingText:'Reading the mystical cards…',
+    resetBtn:'New Reading',
+    footerText:'Tarot Layer — Mystical Tarot Oracle',
+    toggleShow:'Show', toggleHide:'Hide',
+    pos1:'Present', pos2_1:'Past', pos2_2:'Present', pos2_3:'Future',
+    reversedLabel:'Reversed',
+    errApiKey:'Please enter your Groq API key',
+    errCard:'Please shuffle and draw your cards',
+    errAPI:'API error occurred',
+    system:`You are an expert tarot reader. Based on the drawn cards, reversals, birth date, and question, provide a detailed tarot reading in English (600-900 words) including card meanings, reversed interpretations, combined message, advice, and outlook.`,
+    buildPrompt:(cards, bd, q) => {
+      const cardDesc = cards.map(c=>`${c.pos}: ${c.card.en}${c.reversed?' [Reversed]':''}`).join('\n');
+      return `Cards drawn:\n${cardDesc}\n${bd?`Birth date: ${bd}\n`:''}${q?`Question: ${q}\n`:''}Today: ${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}`;
+    }
+  },
+  zh: {
+    lang:'zh', appTitle:'Tarot Layer', appSubtitle:'神秘塔罗占卜',
+    lApiKey:'⚡ Groq API 密钥', lBirth:'出生日期（可选）',
+    lQuestion:'问题或烦恼（可选）', lSpread:'牌阵',
+    spread1Label:'单张牌', spread3Label:'三张牌\n过去·现在·未来',
+    shuffleBtn:'洗牌',
+    shuffleStatus0:'请洗牌并抽取塔罗牌',
+    shuffleStatusDone:'已抽牌，可以开始占卜。',
+    invokeBtn:'解读塔罗', loadingText:'正在解读神秘塔罗…',
+    resetBtn:'重新占卜', footerText:'Tarot Layer — 神秘塔罗占卜',
+    toggleShow:'显示', toggleHide:'隐藏',
+    pos1:'现在', pos2_1:'过去', pos2_2:'现在', pos2_3:'未来',
+    reversedLabel:'逆位',
+    errApiKey:'请输入 Groq API 密钥', errCard:'请洗牌并抽取塔罗牌', errAPI:'API 错误',
+    system:`你是塔罗牌专家。根据抽到的牌、逆位、生日和问题，用中文提供详细的塔罗解读（600-900字），包括每张牌的含义、逆位解读、综合信息和建议。`,
+    buildPrompt:(cards, bd, q) => {
+      const cardDesc = cards.map(c=>`${c.pos}：${c.card.ja}${c.reversed?'【逆位】':''}`).join('\n');
+      return `抽到的牌：\n${cardDesc}\n${bd?`生日：${bd}\n`:''}${q?`问题：${q}\n`:''}今天：${new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})}`;
+    }
+  },
+  ko: {
+    lang:'ko', appTitle:'Tarot Layer', appSubtitle:'신비의 타로 점술',
+    lApiKey:'⚡ Groq API 키', lBirth:'생년월일（선택）',
+    lQuestion:'질문이나 고민（선택）', lSpread:'스프레드',
+    spread1Label:'1장 뽑기', spread3Label:'3장 뽑기\n과거·현재·미래',
+    shuffleBtn:'카드 셔플', shuffleStatus0:'카드를 셔플하고 뽑아주세요',
+    shuffleStatusDone:'카드가 뽑혔습니다. 점술을 시작할 수 있습니다.',
+    invokeBtn:'타로를 읽다', loadingText:'신비로운 타로를 읽고 있습니다…',
+    resetBtn:'다시 점치기', footerText:'Tarot Layer — 신비의 타로 점술',
+    toggleShow:'표시', toggleHide:'숨기기',
+    pos1:'현재', pos2_1:'과거', pos2_2:'현재', pos2_3:'미래',
+    reversedLabel:'역방향',
+    errApiKey:'Groq API 키를 입력해 주세요', errCard:'카드를 셔플하고 뽑아주세요', errAPI:'API 오류',
+    system:`당신은 타로 점술 전문가입니다. 뽑은 카드, 역방향, 생년월일, 질문을 바탕으로 한국어로 상세한 타로 해석(600-900자)을 제공하세요.`,
+    buildPrompt:(cards, bd, q) => {
+      const cardDesc = cards.map(c=>`${c.pos}：${c.card.ja}${c.reversed?'【역방향】':''}`).join('\n');
+      return `뽑은 카드：\n${cardDesc}\n${bd?`생년월일：${bd}\n`:''}${q?`질문：${q}\n`:''}오늘：${new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})}`;
+    }
+  },
+  fr: {
+    lang:'fr', appTitle:'Tarot Layer', appSubtitle:'Oracle du Tarot Mystique',
+    lApiKey:'⚡ Clé API Groq', lBirth:'Date de naissance (optionnel)',
+    lQuestion:'Votre question (optionnel)', lSpread:'Tirage',
+    spread1Label:'1 Carte', spread3Label:'3 Cartes\nPassé · Présent · Futur',
+    shuffleBtn:'Mélanger le jeu',
+    shuffleStatus0:'Mélangez et tirez vos cartes',
+    shuffleStatusDone:'Cartes tirées. Prêt pour la lecture.',
+    invokeBtn:'Lire le Tarot', loadingText:'Lecture des cartes mystiques…',
+    resetBtn:'Nouvelle Lecture', footerText:'Tarot Layer — Oracle du Tarot Mystique',
+    toggleShow:'Afficher', toggleHide:'Masquer',
+    pos1:'Présent', pos2_1:'Passé', pos2_2:'Présent', pos2_3:'Futur',
+    reversedLabel:'Renversée',
+    errApiKey:'Veuillez entrer votre clé API Groq', errCard:'Veuillez mélanger et tirer les cartes', errAPI:'Erreur API',
+    system:`Vous êtes un expert en lecture de tarot. Basé sur les cartes tirées, les renversements, la date de naissance et la question, fournissez une lecture détaillée en français (600-900 mots).`,
+    buildPrompt:(cards, bd, q) => {
+      const cardDesc = cards.map(c=>`${c.pos}: ${c.card.en}${c.reversed?' [Renversée]':''}`).join('\n');
+      return `Cartes tirées:\n${cardDesc}\n${bd?`Date de naissance: ${bd}\n`:''}${q?`Question: ${q}\n`:''}Aujourd'hui: ${new Date().toLocaleDateString('fr-FR',{year:'numeric',month:'long',day:'numeric'})}`;
+    }
+  }
+};
+
+let currentLang = 'ja';
+let currentSpread = 1;
+let drawnCards = []; // [{card, reversed, pos}]
+let shuffled = false;
+
+function setLang(lang) {
+  currentLang = lang;
+  const t = I18N[lang];
+  document.documentElement.lang = t.lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === lang));
+  document.getElementById('appTitle').textContent = t.appTitle;
+  document.getElementById('appSubtitle').textContent = t.appSubtitle;
+  document.getElementById('lBirth').textContent = t.lBirth;
+  document.getElementById('lQuestion').textContent = t.lQuestion;
+  document.getElementById('lSpread').textContent = t.lSpread;
+  document.getElementById('spread1Label').textContent = t.spread1Label;
+  document.getElementById('spread3Label').textContent = t.spread3Label;
+  document.getElementById('shuffleBtn').textContent = t.shuffleBtn;
+  document.getElementById('invokeBtn').textContent = t.invokeBtn;
+  document.getElementById('loadingText').textContent = t.loadingText;
+  document.getElementById('resetBtn').textContent = t.resetBtn;
+  document.getElementById('footerText').textContent = t.footerText;
+  document.title = t.appTitle;
+  if(!shuffled) document.getElementById('shuffleStatus').textContent = t.shuffleStatus0;
+  renderSelectedCards();
+}
+
+function selectSpread(n) {
+  currentSpread = n;
+  document.getElementById('spread1').classList.toggle('active', n===1);
+  document.getElementById('spread3').classList.toggle('active', n===3);
+  // リセット
+  drawnCards = [];
+  shuffled = false;
+  document.getElementById('shuffleStatus').textContent = I18N[currentLang].shuffleStatus0;
+  document.getElementById('selectedCards').style.display = 'none';
+  document.getElementById('invokeBtn').disabled = true;
+}
+
+function shuffleDeck() {
+  const t = I18N[currentLang];
+  const deckEl = document.getElementById('shuffleDeck');
+
+  // シャッフルアニメーション（3回繰り返す）
+  let count = 0;
+  const maxShuffles = 3;
+  document.getElementById('shuffleBtn').disabled = true;
+  document.getElementById('shuffleStatus').textContent = '🔀 シャッフル中...';
+
+  function doShuffle() {
+    deckEl.classList.remove('shuffling');
+    void deckEl.offsetWidth; // reflow
+    deckEl.classList.add('shuffling');
+    count++;
+    if(count < maxShuffles) {
+      setTimeout(doShuffle, 850);
+    } else {
+      setTimeout(() => {
+        deckEl.classList.remove('shuffling');
+        drawCards();
+      }, 850);
+    }
+  }
+  doShuffle();
+}
+
+function drawCards() {
+  const t = I18N[currentLang];
+  // デッキをシャッフルしてカードを引く
+  const deck = [...TAROT_CARDS];
+  for(let i=deck.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [deck[i],deck[j]]=[deck[j],deck[i]];
+  }
+
+  drawnCards = [];
+  const positions = currentSpread === 1
+    ? [t.pos1]
+    : [t.pos2_1, t.pos2_2, t.pos2_3];
+
+  for(let i=0;i<currentSpread;i++) {
+    drawnCards.push({
+      card: deck[i],
+      reversed: Math.random() < 0.35,
+      pos: positions[i]
+    });
+  }
+
+  shuffled = true;
+  document.getElementById('shuffleBtn').disabled = false;
+  document.getElementById('shuffleStatus').textContent = t.shuffleStatusDone;
+  document.getElementById('invokeBtn').disabled = false;
+  renderSelectedCards();
+}
+
+function renderSelectedCards() {
+  const container = document.getElementById('selectedCards');
+  if(drawnCards.length === 0) { container.style.display='none'; return; }
+  container.style.display = 'flex';
+  const t = I18N[currentLang];
+  container.innerHTML = drawnCards.map(dc => `
+    <div class="card-slot">
+      <div class="card-slot-label">${dc.pos}</div>
+      <div class="card-visual ${dc.reversed?'reversed':''}">${makeCardSVG(dc.card, dc.reversed)}</div>
+      <div class="card-name">${dc.card.ja}</div>
+      ${dc.reversed ? `` : ''}
+    </div>
+  `).join('');
+}
+
+// ストレージ
+function storageSave(key, value) {
+  try { localStorage.setItem(key, value); } catch(e) {}
+  try {
+    const expires = new Date(); expires.setFullYear(expires.getFullYear()+1);
+    document.cookie = encodeURIComponent(key)+'='+encodeURIComponent(value)+'; expires='+expires.toUTCString()+'; path=/; SameSite=Lax';
+  } catch(e) {}
+}
+function storageLoad(key) {
+  try { const v=localStorage.getItem(key); if(v!==null)return v; } catch(e) {}
+  try {
+    const name=encodeURIComponent(key)+'=';
+    for(let p of document.cookie.split(';')) { p=p.trim(); if(p.startsWith(name))return decodeURIComponent(p.substring(name.length)); }
+  } catch(e) {}
+  return null;
+}
+function saveData() {
+  const data = { birthdate:document.getElementById('birthdate').value, lang:currentLang };
+  try { storageSave('tarotlayer_data', JSON.stringify(data)); } catch(e) {}
+}
+function loadData() {
+  try {
+    const raw = storageLoad('tarotlayer_data');
+    if(!raw)return;
+    const d = JSON.parse(raw);
+    if(d.birthdate) document.getElementById('birthdate').value = d.birthdate;
+    if(d.lang) setLang(d.lang);
+  } catch(e) {}
+}
+
+
+// 共通AI呼び出し（Gemma優先・Groqフォールバック）
+async function callAI(prompt) {
+  if(gemmaKey) {
+    try {
+      const res = await fetch(PROXY_URL,
+        {method:'POST', headers:{'Content-Type':'application/json'},
+         body:JSON.stringify({contents:[{parts:[{text:prompt}]}], generationConfig:{maxOutputTokens:1400,temperature:0.9}})}
+      );
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if(res.ok && text) return text;
+    } catch(e) {}
+  }
+  if(groqKey) {
+    const MODELS = ['llama-3.3-70b-versatile','llama3-70b-8192','gemma2-9b-it'];
+    for(const model of MODELS) {
+      try {
+        const res = await fetch(PROXY_URL, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({model, max_tokens:1400, temperature:0.9, messages:[{role:'user',content:prompt}]})
+        });
+        const data = await res.json();
+        if(res.ok && data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+      } catch(e) { continue; }
+    }
+  }
+  throw new Error('APIキーを入力してください');
+}
+
+function showError(msg) { const el=document.getElementById('errorMsg'); el.textContent=msg; el.className='error-msg show'; }
+function resetForm() {
+  document.getElementById('resultScroll').className='result-scroll';
+  document.getElementById('formSection').style.display='block';
+  document.getElementById('errorMsg').className='error-msg';
+  drawnCards=[]; shuffled=false;
+  document.getElementById('selectedCards').style.display='none';
+  document.getElementById('invokeBtn').disabled=true;
+  document.getElementById('shuffleStatus').textContent=I18N[currentLang].shuffleStatus0;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function invokeTarot() {
+  try {
+  const t = I18N[currentLang];
+  const birthdate = document.getElementById('birthdate').value;
+  const question = document.getElementById('question').value.trim();
+
+  document.getElementById('errorMsg').className='error-msg';
+  if(drawnCards.length===0) { showError(t.errCard); return; }
+
+  try { saveData(); } catch(e) {}
+
+  document.getElementById('formSection').style.display='none';
+  document.getElementById('loadingVeil').className='loading-veil show';
+  document.getElementById('resultScroll').className='result-scroll';
+
+  const prompt = t.system + '\n\n' + t.buildPrompt(drawnCards, birthdate, question);
+  const text = await callAI(prompt);
+
+  // 結果表示
+  document.getElementById('loadingVeil').className='loading-veil';
+
+  // カード表示
+  const t2 = I18N[currentLang];
+  document.getElementById('resultCards').innerHTML = drawnCards.map(dc => `
+    <div class="result-card">
+      <div class="result-card-visual ${dc.reversed?'reversed':''}">${makeCardSVG(dc.card,dc.reversed)}</div>
+      <div class="result-card-name">${dc.card.ja}</div>
+      <div class="result-card-pos">${dc.pos}</div>
+      ${dc.reversed?``:''}
+    </div>
+  `).join('');
+
+  document.getElementById('fortuneText').textContent = text;
+  document.getElementById('resultScroll').className='result-scroll show';
+
+  } catch(err) {
+    document.getElementById('loadingVeil').className='loading-veil';
+    document.getElementById('formSection').style.display='block';
+    const msg=err.message||'';
+    if(msg.startsWith('GROQ_FAILED:')) showError('Groqエラー: '+msg.slice(12));
+    else showError(I18N[currentLang].errAPI+(msg?'（'+msg.slice(0,60)+'）':''));
+  }
+}
+
+// ══════════════════════════════════════════
+// Ocean Canvas（表海・波と泡）
+// ══════════════════════════════════════════
+(function() {
+  const canvas=document.getElementById('skyCanvas');
+  const ctx=canvas.getContext('2d');
+  function resize(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+  resize(); window.addEventListener('resize',resize);
+
+  // 波パラメータ
+  const waves = [
+    { amp:28, freq:0.012, speed:0.018, y:0.55, alpha:0.18, color:'0,120,180' },
+    { amp:20, freq:0.018, speed:0.025, y:0.62, alpha:0.22, color:'0,140,200' },
+    { amp:14, freq:0.025, speed:0.032, y:0.68, alpha:0.28, color:'20,160,210' },
+    { amp:10, freq:0.035, speed:0.042, y:0.74, alpha:0.32, color:'40,180,220' },
+    { amp:7,  freq:0.048, speed:0.055, y:0.80, alpha:0.35, color:'60,200,230' },
+  ];
+
+  // 泡
+  let bubbles = [];
+  function initBubbles(){
+    bubbles = [];
+    for(let i=0;i<60;i++){
+      bubbles.push(makeBubble());
+    }
+  }
+  function makeBubble(){
+    return {
+      x: Math.random()*canvas.width,
+      y: canvas.height*(0.5 + Math.random()*0.5),
+      r: Math.random()*6+1,
+      vy: -(Math.random()*0.6+0.2),
+      vx: (Math.random()-0.5)*0.3,
+      alpha: Math.random()*0.4+0.1,
+      life: Math.random(),
+      maxLife: Math.random()*180+60,
+    };
+  }
+  initBubbles();
+  window.addEventListener('resize', initBubbles);
+
+  // 光のきらめき（水面反射）
+  let sparkles = [];
+  function initSparkles(){
+    sparkles = [];
+    for(let i=0;i<40;i++){
+      sparkles.push(makeSparkle());
+    }
+  }
+  function makeSparkle(){
+    return {
+      x: Math.random()*canvas.width,
+      y: canvas.height*(0.3 + Math.random()*0.35),
+      size: Math.random()*3+0.5,
+      alpha: 0,
+      speed: Math.random()*0.04+0.02,
+      offset: Math.random()*Math.PI*2,
+    };
+  }
+  initSparkles();
+
+  let frame = 0;
+  function draw(){
+    // 背景（空→海グラデーション）
+    const skyGrd = ctx.createLinearGradient(0,0,0,canvas.height);
+    skyGrd.addColorStop(0,   '#0a1a3a');
+    skyGrd.addColorStop(0.35,'#0d2a5a');
+    skyGrd.addColorStop(0.55,'#0a4a8a');
+    skyGrd.addColorStop(0.7, '#0868aa');
+    skyGrd.addColorStop(1,   '#0a5a90');
+    ctx.fillStyle = skyGrd;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // 遠景の波（ほぼ水平線）
+    const horizon = canvas.height*0.48;
+    const horizonGrd = ctx.createLinearGradient(0,horizon-20,0,horizon+30);
+    horizonGrd.addColorStop(0,'rgba(120,200,255,0.15)');
+    horizonGrd.addColorStop(0.5,'rgba(80,180,240,0.25)');
+    horizonGrd.addColorStop(1,'rgba(0,100,180,0.0)');
+    ctx.fillStyle = horizonGrd;
+    ctx.fillRect(0,horizon-20,canvas.width,50);
+
+    // 波を描く
+    waves.forEach((w,wi) => {
+      const baseY = canvas.height * w.y;
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height);
+      // 波形
+      for(let x=0;x<=canvas.width+2;x+=2){
+        const y = baseY
+          + Math.sin(x*w.freq + frame*w.speed) * w.amp
+          + Math.sin(x*w.freq*1.7 + frame*w.speed*0.8 + wi) * w.amp*0.4;
+        if(x===0) ctx.lineTo(0,y); else ctx.lineTo(x,y);
+      }
+      ctx.lineTo(canvas.width, canvas.height);
+      ctx.closePath();
+
+      const wGrd = ctx.createLinearGradient(0, baseY-w.amp, 0, canvas.height);
+      wGrd.addColorStop(0, `rgba(${w.color},${w.alpha*0.5})`);
+      wGrd.addColorStop(0.3, `rgba(${w.color},${w.alpha})`);
+      wGrd.addColorStop(1, `rgba(${w.color},${w.alpha*1.5})`);
+      ctx.fillStyle = wGrd;
+      ctx.fill();
+
+      // 波頭の白い泡ライン
+      ctx.beginPath();
+      for(let x=0;x<=canvas.width+2;x+=2){
+        const y = baseY
+          + Math.sin(x*w.freq + frame*w.speed) * w.amp
+          + Math.sin(x*w.freq*1.7 + frame*w.speed*0.8 + wi) * w.amp*0.4;
+        if(x===0) ctx.moveTo(0,y); else ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle = `rgba(200,240,255,${w.alpha*0.6})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+
+    // 光のきらめき
+    sparkles.forEach(s=>{
+      s.alpha = (Math.sin(frame*s.speed + s.offset) + 1) * 0.25;
+      ctx.globalAlpha = s.alpha;
+      ctx.fillStyle = 'rgba(220,248,255,1)';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size, 0, Math.PI*2);
+      ctx.fill();
+      // 十字光
+      if(s.size > 2){
+        ctx.strokeStyle = 'rgba(220,248,255,0.6)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(s.x-s.size*3,s.y); ctx.lineTo(s.x+s.size*3,s.y);
+        ctx.moveTo(s.x,s.y-s.size*3); ctx.lineTo(s.x,s.y+s.size*3);
+        ctx.stroke();
+      }
+    });
+
+    // 泡
+    bubbles.forEach(b=>{
+      b.x += b.vx; b.y += b.vy;
+      b.life += 1/b.maxLife;
+      if(b.life >= 1 || b.y < canvas.height*0.45){
+        Object.assign(b, makeBubble());
+        b.life = 0;
+      }
+      const a = Math.sin(b.life*Math.PI) * b.alpha;
+      ctx.globalAlpha = a;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(200,240,255,0.8)`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      // 泡の光沢
+      ctx.beginPath();
+      ctx.arc(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.3, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fill();
+    });
+
+    ctx.globalAlpha = 1;
+    frame++; requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// タッチイベント
+document.querySelectorAll('.lang-btn').forEach(btn=>{
+  btn.addEventListener('touchend',function(e){e.preventDefault();setLang(this.dataset.lang);},{passive:false});
+});
+
+document.addEventListener('DOMContentLoaded',function(){
+  const btn=document.getElementById('invokeBtn');
+  if(btn)btn.addEventListener('click',function(e){e.preventDefault();invokeTarot();});
+});
+
+setLang('ja');
+loadData();
+</script>
+</body>
+</html>
